@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gioco della Porta con Toggle</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 2rem;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            background-color: white;
+        }
+        .button-container {
+            display: flex;
+            justify-content: space-around;
+            margin: 30px 0;
+        }
+        .toggle-button {
+            width: 120px;
+            padding: 15px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            position: relative;
+            font-weight: bold;
+        }
+        .user1 {
+            background-color: #ccc;
+            color: #555;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .user1.on {
+            background-color: #4CAF50;
+            color: white;
+            box-shadow: 0 0 15px rgba(76,175,80,0.5);
+        }
+        .user2 {
+            background-color: #ccc;
+            color: #555;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .user2.on {
+            background-color: #2196F3;
+            color: white;
+            box-shadow: 0 0 15px rgba(33,150,243,0.5);
+        }
+        .result {
+            background-color: #ccc;
+            color: #555;
+        }
+        .result.active {
+            background-color: #f44336;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(244, 67, 54, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(244, 67, 54, 0);
+            }
+        }
+        .door-image {
+            height: 200px;
+            margin: 20px auto;
+            display: none;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .status {
+            margin-top: 20px;
+            font-style: italic;
+            color: #666;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .user-info {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f0f0f0;
+            border-radius: 6px;
+        }
+        #user-select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+        }
+        .state-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+            background-color: #ccc;
+        }
+        .state-indicator.on {
+            background-color: #4CAF50;
+        }
+        .connection-status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #e8f5e9;
+            color: #2e7d32;
+        }
+    </style>
+    <!-- Per una implementazione reale, aggiungere script di Socket.io -->
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Gioco della Porta</h1>
+        <p>Clicca i pulsanti per commutare tra ON e OFF. Quando entrambi i pulsanti sono ON, potrai vedere la porta!</p>
+        
+        <div class="user-info">
+            <label for="user-select">Seleziona il tuo ruolo:</label>
+            <select id="user-select">
+                <option value="">Scegli...</option>
+                <option value="user1">Utente 1</option>
+                <option value="user2">Utente 2</option>
+                <option value="observer">Osservatore</option>
+            </select>
+        </div>
+        
+        <div class="button-container">
+            <div>
+                <button id="button1" class="toggle-button user1">OFF</button>
+                <div>Utente 1</div>
+            </div>
+            <div>
+                <button id="button2" class="toggle-button user2">OFF</button>
+                <div>Utente 2</div>
+            </div>
+            <div>
+                <button id="resultButton" class="toggle-button result">Risultato</button>
+                <div>Mostra Porta</div>
+            </div>
+        </div>
+        
+        <img id="doorImage" class="door-image" src="door.jpg" alt="Una porta">
+        
+        <div class="status" id="status">In attesa della connessione al server...</div>
+        
+        <div class="connection-status">
+            <p>ID di connessione: <span id="connectionId">...</span></p>
+            <p>Stato pulsanti: 
+                <span class="state-indicator" id="state1"></span>Utente 1 
+                <span class="state-indicator" id="state2"></span>Utente 2
+            </p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const button1 = document.getElementById('button1');
+            const button2 = document.getElementById('button2');
+            const resultButton = document.getElementById('resultButton');
+            const doorImage = document.getElementById('doorImage');
+            const statusElement = document.getElementById('status');
+            const userSelect = document.getElementById('user-select');
+            const connectionIdElement = document.getElementById('connectionId');
+            const state1Indicator = document.getElementById('state1');
+            const state2Indicator = document.getElementById('state2');
+            
+            let userRole = '';
+            let user1ButtonState = false;
+            let user2ButtonState = false;
+            let canShowResult = false;
+            
+            // Connetti al server Socket.io
+            const socket = io();
+            
+            socket.on('connect', () => {
+                statusElement.textContent = 'Connesso! Seleziona il tuo ruolo per iniziare.';
+            });
+            
+            socket.on('connectionId', (id) => {
+                connectionIdElement.textContent = id;
+            });
+            
+            socket.on('gameState', (state) => {
+                user1ButtonState = state.user1ButtonState;
+                user2ButtonState = state.user2ButtonState;
+                
+                updateButtonAppearance();
+            });
+            
+            socket.on('buttonStateChange', (data) => {
+                if (data.user === 'user1') {
+                    user1ButtonState = data.state;
+                    updateButton(button1, data.state);
+                    statusElement.textContent = `Utente 1 ha cambiato stato a ${data.state ? 'ON' : 'OFF'}!`;
+                } else if (data.user === 'user2') {
+                    user2ButtonState = data.state;
+                    updateButton(button2, data.state);
+                    statusElement.textContent = `Utente 2 ha cambiato stato a ${data.state ? 'ON' : 'OFF'}!`;
+                }
+                
+                updateIndicators();
+            });
+            
+            socket.on('canShowResult', (canShow) => {
+                canShowResult = canShow;
+                if (canShow) {
+                    resultButton.classList.add('active');
+                    statusElement.textContent = 'Entrambi i pulsanti sono ON! Premi "Risultato" per vedere la porta.';
+                } else {
+                    resultButton.classList.remove('active');
+                    doorImage.style.display = 'none';
+                }
+            });
+            
+            socket.on('disconnect', () => {
+                statusElement.textContent = 'Disconnesso dal server. Riconnessione in corso...';
+            });
+            
+            function updateButtonAppearance() {
+                updateButton(button1, user1ButtonState);
+                updateButton(button2, user2ButtonState);
+                updateIndicators();
+                
+                if (user1ButtonState && user2ButtonState) {
+                    resultButton.classList.add('active');
+                } else {
+                    resultButton.classList.remove('active');
+                    doorImage.style.display = 'none';
+                }
+            }
+            
+            function updateButton(button, isOn) {
+                if (isOn) {
+                    button.textContent = 'ON';
+                    button.classList.add('on');
+                } else {
+                    button.textContent = 'OFF';
+                    button.classList.remove('on');
+                }
+            }
+            
+            function updateIndicators() {
+                if (user1ButtonState) {
+                    state1Indicator.classList.add('on');
+                } else {
+                    state1Indicator.classList.remove('on');
+                }
+                
+                if (user2ButtonState) {
+                    state2Indicator.classList.add('on');
+                } else {
+                    state2Indicator.classList.remove('on');
+                }
+            }
+            
+            userSelect.addEventListener('change', () => {
+                userRole = userSelect.value;
+                
+                // Invia il ruolo al server
+                socket.emit('setRole', userRole);
+                
+                if (userRole === 'user1') {
+                    statusElement.textContent = 'Sei l\'Utente 1. Puoi cliccare il tuo pulsante per commutarlo ON/OFF!';
+                    button1.style.cursor = 'pointer';
+                    button2.style.cursor = 'not-allowed';
+                } else if (userRole === 'user2') {
+                    statusElement.textContent = 'Sei l\'Utente 2. Puoi cliccare il tuo pulsante per commutarlo ON/OFF!';
+                    button1.style.cursor = 'not-allowed';
+                    button2.style.cursor = 'pointer';
+                } else if (userRole === 'observer') {
+                    statusElement.textContent = 'Sei un osservatore. Puoi solo vedere lo stato dei pulsanti.';
+                    button1.style.cursor = 'not-allowed';
+                    button2.style.cursor = 'not-allowed';
+                }
+            });
+            
+            button1.addEventListener('click', () => {
+                if (userRole === 'user1') {
+                    // Toggle dello stato
+                    const newState = !user1ButtonState;
+                    socket.emit('toggleButton', {
+                        user: 'user1',
+                        state: newState
+                    });
+                }
+            });
+            
+            button2.addEventListener('click', () => {
+                if (userRole === 'user2') {
+                    // Toggle dello stato
+                    const newState = !user2ButtonState;
+                    socket.emit('toggleButton', {
+                        user: 'user2',
+                        state: newState
+                    });
+                }
+            });
+            
+            resultButton.addEventListener('click', () => {
+                if (canShowResult) {
+                    if (doorImage.style.display === 'none' || doorImage.style.display === '') {
+                        doorImage.style.display = 'block';
+                        statusElement.textContent = 'Ecco la porta! Congratulazioni!';
+                    } else {
+                        doorImage.style.display = 'none';
+                        statusElement.textContent = 'Hai nascosto la porta. Puoi mostrarla di nuovo premendo il pulsante "Risultato".';
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
