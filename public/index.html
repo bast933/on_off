@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gioco della Porta con Toggle</title>
+    <title>Relazioni on off</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -122,13 +122,48 @@
             background-color: #e8f5e9;
             color: #2e7d32;
         }
+        .text-input-container {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            display: none;
+        }
+        .text-input-container.visible {
+            display: block;
+        }
+        #userText {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .save-button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        .save-button:hover {
+            background-color: #45a049;
+        }
+        .save-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
     </style>
     <!-- Per una implementazione reale, aggiungere script di Socket.io -->
     <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
     <div class="container">
-        <h1>Gioco della Porta</h1>
+        <h1>Relazioni on off</h1>
         <p>Clicca i pulsanti per commutare tra ON e OFF. Quando entrambi i pulsanti sono ON, potrai vedere la porta!</p>
         
         <div class="user-info">
@@ -139,6 +174,12 @@
                 <option value="user2">Utente 2</option>
                 <option value="observer">Osservatore</option>
             </select>
+        </div>
+        
+        <div class="text-input-container" id="textInputContainer">
+            <label for="userText">Inserisci il tuo testo:</label>
+            <textarea id="userText" rows="4" placeholder="Scrivi qui il tuo testo..."></textarea>
+            <button id="saveButton" class="save-button" disabled>Salva</button>
         </div>
         
         <div class="button-container">
@@ -180,11 +221,17 @@
             const connectionIdElement = document.getElementById('connectionId');
             const state1Indicator = document.getElementById('state1');
             const state2Indicator = document.getElementById('state2');
+            const textInputContainer = document.getElementById('textInputContainer');
+            const userText = document.getElementById('userText');
+            const saveButton = document.getElementById('saveButton');
             
             let userRole = '';
             let user1ButtonState = false;
             let user2ButtonState = false;
             let canShowResult = false;
+            let user1Assigned = false;
+            let user2Assigned = false;
+            let userTextSaved = false;
             
             // Connetti al server Socket.io
             const socket = io();
@@ -200,8 +247,23 @@
             socket.on('gameState', (state) => {
                 user1ButtonState = state.user1ButtonState;
                 user2ButtonState = state.user2ButtonState;
+                user1Assigned = state.user1Assigned;
+                user2Assigned = state.user2Assigned;
                 
                 updateButtonAppearance();
+                updateRoleSelect();
+            });
+            
+            socket.on('roleError', (message) => {
+                statusElement.textContent = message;
+                userSelect.value = '';
+                userRole = '';
+            });
+            
+            socket.on('roleAssignment', (state) => {
+                user1Assigned = state.user1Assigned;
+                user2Assigned = state.user2Assigned;
+                updateRoleSelect();
             });
             
             socket.on('buttonStateChange', (data) => {
@@ -270,46 +332,118 @@
                 }
             }
             
+            function updateRoleSelect() {
+                const user1Option = userSelect.querySelector('option[value="user1"]');
+                const user2Option = userSelect.querySelector('option[value="user2"]');
+                
+                if (user1Assigned) {
+                    user1Option.disabled = true;
+                    user1Option.textContent = 'Utente 1 (Assegnato)';
+                } else {
+                    user1Option.disabled = false;
+                    user1Option.textContent = 'Utente 1';
+                }
+                
+                if (user2Assigned) {
+                    user2Option.disabled = true;
+                    user2Option.textContent = 'Utente 2 (Assegnato)';
+                } else {
+                    user2Option.disabled = false;
+                    user2Option.textContent = 'Utente 2';
+                }
+                
+                // Se l'utente corrente ha perso il suo ruolo, resetta la selezione
+                if ((userRole === 'user1' && user1Assigned === false) || 
+                    (userRole === 'user2' && user2Assigned === false)) {
+                    userSelect.value = '';
+                    userRole = '';
+                    statusElement.textContent = 'Il tuo ruolo è stato resettato. Seleziona un nuovo ruolo.';
+                }
+            }
+            
             userSelect.addEventListener('change', () => {
-                userRole = userSelect.value;
+                const newRole = userSelect.value;
+                
+                // Se il ruolo è già assegnato, non permettere la selezione
+                if ((newRole === 'user1' && user1Assigned) || 
+                    (newRole === 'user2' && user2Assigned)) {
+                    statusElement.textContent = 'Questo ruolo è già stato assegnato!';
+                    userSelect.value = userRole; // Ripristina la selezione precedente
+                    return;
+                }
+                
+                userRole = newRole;
                 
                 // Invia il ruolo al server
                 socket.emit('setRole', userRole);
                 
                 if (userRole === 'user1') {
-                    statusElement.textContent = 'Sei l\'Utente 1. Puoi cliccare il tuo pulsante per commutarlo ON/OFF!';
-                    button1.style.cursor = 'pointer';
-                    button2.style.cursor = 'not-allowed';
-                } else if (userRole === 'user2') {
-                    statusElement.textContent = 'Sei l\'Utente 2. Puoi cliccare il tuo pulsante per commutarlo ON/OFF!';
+                    statusElement.textContent = 'Sei l\'Utente 1. Inserisci il tuo testo e poi potrai cliccare il tuo pulsante!';
                     button1.style.cursor = 'not-allowed';
-                    button2.style.cursor = 'pointer';
+                    button2.style.cursor = 'not-allowed';
+                    textInputContainer.classList.add('visible');
+                    saveButton.disabled = false;
+                    userText.disabled = false;
+                } else if (userRole === 'user2') {
+                    statusElement.textContent = 'Sei l\'Utente 2. Inserisci il tuo testo e poi potrai cliccare il tuo pulsante!';
+                    button1.style.cursor = 'not-allowed';
+                    button2.style.cursor = 'not-allowed';
+                    textInputContainer.classList.add('visible');
+                    saveButton.disabled = false;
+                    userText.disabled = false;
                 } else if (userRole === 'observer') {
                     statusElement.textContent = 'Sei un osservatore. Puoi solo vedere lo stato dei pulsanti.';
                     button1.style.cursor = 'not-allowed';
                     button2.style.cursor = 'not-allowed';
+                    textInputContainer.classList.remove('visible');
+                }
+            });
+            
+            userText.addEventListener('input', () => {
+                saveButton.disabled = !userText.value.trim();
+            });
+            
+            saveButton.addEventListener('click', () => {
+                if (userText.value.trim()) {
+                    socket.emit('saveUserText', {
+                        text: userText.value.trim(),
+                        userRole: userRole
+                    });
+                    userTextSaved = true;
+                    saveButton.disabled = true;
+                    userText.disabled = true;
+                    statusElement.textContent = 'Testo salvato! Ora puoi cliccare il tuo pulsante.';
+                    if (userRole === 'user1') {
+                        button1.style.cursor = 'pointer';
+                    } else if (userRole === 'user2') {
+                        button2.style.cursor = 'pointer';
+                    }
                 }
             });
             
             button1.addEventListener('click', () => {
-                if (userRole === 'user1') {
+                if (userRole === 'user1' && userTextSaved) {
                     // Toggle dello stato
                     const newState = !user1ButtonState;
                     socket.emit('toggleButton', {
                         user: 'user1',
                         state: newState
                     });
+                } else if (userRole === 'user1' && !userTextSaved) {
+                    statusElement.textContent = 'Devi prima salvare il tuo testo!';
                 }
             });
             
             button2.addEventListener('click', () => {
-                if (userRole === 'user2') {
+                if (userRole === 'user2' && userTextSaved) {
                     // Toggle dello stato
                     const newState = !user2ButtonState;
                     socket.emit('toggleButton', {
                         user: 'user2',
                         state: newState
                     });
+                } else if (userRole === 'user2' && !userTextSaved) {
+                    statusElement.textContent = 'Devi prima salvare il tuo testo!';
                 }
             });
             
