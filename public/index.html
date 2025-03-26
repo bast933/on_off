@@ -295,6 +295,21 @@
                 statusElement.textContent = 'Disconnesso dal server. Riconnessione in corso...';
             });
             
+            socket.on('userTextReceived', (data) => {
+                if (data.userRole !== userRole) {
+                    userText.value = data.text;
+                    userTextSaved = true;
+                    saveButton.disabled = true;
+                    userText.disabled = true;
+                    statusElement.textContent = `Hai ricevuto il testo dall'${data.userRole === 'user1' ? 'Utente 1' : 'Utente 2'}. Ora puoi cliccare il tuo pulsante.`;
+                    if (userRole === 'user1') {
+                        button1.style.cursor = 'pointer';
+                    } else if (userRole === 'user2') {
+                        button2.style.cursor = 'pointer';
+                    }
+                }
+            });
+            
             function updateButtonAppearance() {
                 updateButton(button1, user1ButtonState);
                 updateButton(button2, user2ButtonState);

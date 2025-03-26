@@ -75,9 +75,19 @@ io.on('connection', (socket) => {
         if (data.userRole === 'user1') {
             currentUser1Text = data.text;
             console.log(`Testo salvato per Utente 1: ${data.text}`);
+            // Invia il testo all'utente 2
+            io.emit('userTextReceived', {
+                text: data.text,
+                userRole: 'user1'
+            });
         } else if (data.userRole === 'user2') {
             currentUser2Text = data.text;
             console.log(`Testo salvato per Utente 2: ${data.text}`);
+            // Invia il testo all'utente 1
+            io.emit('userTextReceived', {
+                text: data.text,
+                userRole: 'user2'
+            });
         }
     });
     
