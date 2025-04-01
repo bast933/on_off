@@ -1,3 +1,5 @@
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass  (quando powershell non va)
 npm install
 npm start
+
+ciao vorrei che quando invia dati al databse invece di scrivere ogni volta una nuova riga sovrascrivesse la riga  Poi quando l'utente si disconnette scrivere una nuova riga in maniera da creare una cronologia

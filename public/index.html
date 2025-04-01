@@ -157,6 +157,27 @@
             background-color: #cccccc;
             cursor: not-allowed;
         }
+        .history-container {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .history-entry {
+            margin: 10px 0;
+            padding: 15px;
+            background-color: white;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .history-entry.active {
+            border-left: 4px solid #4CAF50;
+        }
+        .history-entry.inactive {
+            border-left: 4px solid #f44336;
+        }
     </style>
     <!-- Per una implementazione reale, aggiungere script di Socket.io -->
     <script src="/socket.io/socket.io.js"></script>
@@ -207,6 +228,11 @@
                 <span class="state-indicator" id="state1"></span>Utente 1 
                 <span class="state-indicator" id="state2"></span>Utente 2
             </p>
+        </div>
+
+        <div class="history-container">
+            <h2>Cronologia Sessioni</h2>
+            <div id="historyList"></div>
         </div>
     </div>
 
@@ -308,6 +334,27 @@
                         button2.style.cursor = 'pointer';
                     }
                 }
+            });
+            
+            socket.on('sessionHistory', (history) => {
+                const historyList = document.getElementById('historyList');
+                historyList.innerHTML = '';
+                
+                history.forEach(session => {
+                    const entry = document.createElement('div');
+                    entry.className = `history-entry ${session.is_active ? 'active' : 'inactive'}`;
+                    
+                    const timestamp = new Date(session.timestamp).toLocaleString('it-IT');
+                    entry.innerHTML = `
+                        <p><strong>Data:</strong> ${timestamp}</p>
+                        <p><strong>Testo:</strong> ${session.user_text}</p>
+                        <p><strong>Stato Utente 1:</strong> ${session.user1_button_state ? 'ON' : 'OFF'}</p>
+                        <p><strong>Stato Utente 2:</strong> ${session.user2_button_state ? 'ON' : 'OFF'}</p>
+                        <p><strong>Sessione:</strong> ${session.is_active ? 'Attiva' : 'Terminata'}</p>
+                    `;
+                    
+                    historyList.appendChild(entry);
+                });
             });
             
             function updateButtonAppearance() {

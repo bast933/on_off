@@ -1,4 +1,5 @@
 // server.js - Versione con pulsanti toggle ON/OFF e database MySQL
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -17,10 +18,10 @@ const PORT = process.env.PORT || 3000;
 
 // Configurazione della connessione MySQL
 const pool = mysql.createPool({
-    host: 'localhost',
-    user: 'root',
-    password: '',
-    database: 'door_game',
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -30,11 +31,14 @@ const pool = mysql.createPool({
 pool.query(`
     CREATE TABLE IF NOT EXISTS game_states (
         id INT AUTO_INCREMENT PRIMARY KEY,
+        session_id VARCHAR(255),
         user_text TEXT,
         user1_button_state BOOLEAN,
         user2_button_state BOOLEAN,
         result_button_state BOOLEAN,
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        is_active BOOLEAN DEFAULT TRUE,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_session (session_id)
     )
 `, (err) => {
     if (err) {
@@ -55,12 +59,31 @@ let user1Assigned = false;
 let user2Assigned = false;
 let currentUser1Text = '';
 let currentUser2Text = '';
+let currentSessionId = null;
 
 io.on('connection', (socket) => {
     console.log(`Nuovo utente connesso: ${socket.id}`);
     
+    // Creiamo una nuova sessione quando si connette il primo utente
+    if (!currentSessionId) {
+        currentSessionId = Date.now().toString();
+    }
+    
     // Inviamo l'ID di connessione al client
     socket.emit('connectionId', socket.id);
+    
+    // Recuperiamo e inviamo la cronologia delle sessioni
+    pool.query(`
+        SELECT * FROM game_states 
+        ORDER BY timestamp DESC 
+        LIMIT 10
+    `, (err, results) => {
+        if (err) {
+            console.error('Errore nel recupero della cronologia:', err);
+        } else {
+            socket.emit('sessionHistory', results);
+        }
+    });
     
     // Inviamo lo stato attuale dei pulsanti e le assegnazioni
     socket.emit('gameState', {
@@ -136,6 +159,35 @@ io.on('connection', (socket) => {
             state: data.state
         });
         
+        // Salviamo il testo di entrambi gli utenti
+        const combinedText = `Utente 1: ${currentUser1Text}\nUtente 2: ${currentUser2Text}`;
+        
+        // Aggiorniamo o inseriamo lo stato nel database
+        const query = `
+            INSERT INTO game_states 
+            (session_id, user_text, user1_button_state, user2_button_state, result_button_state, is_active) 
+            VALUES (?, ?, ?, ?, ?, TRUE)
+            ON DUPLICATE KEY UPDATE
+            user_text = VALUES(user_text),
+            user1_button_state = VALUES(user1_button_state),
+            user2_button_state = VALUES(user2_button_state),
+            result_button_state = VALUES(result_button_state)
+        `;
+        
+        pool.query(query, [
+            currentSessionId,
+            combinedText,
+            user1ButtonState,
+            user2ButtonState,
+            (user1ButtonState && user2ButtonState)
+        ], (err, results) => {
+            if (err) {
+                console.error('Errore nel salvataggio dello stato:', err);
+            } else {
+                console.log('Stato del gioco salvato nel database');
+            }
+        });
+        
         // Controlliamo se entrambi i pulsanti sono ON per abilitare il risultato
         checkResult();
     });
@@ -144,6 +196,21 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log(`Utente disconnesso: ${socket.id}`);
         const userRole = connectedUsers.get(socket.id);
+        
+        // Aggiorniamo lo stato della sessione corrente come non attiva
+        if (currentSessionId) {
+            const updateQuery = `
+                UPDATE game_states 
+                SET is_active = FALSE 
+                WHERE session_id = ?
+            `;
+            pool.query(updateQuery, [currentSessionId], (err) => {
+                if (err) {
+                    console.error('Errore nell\'aggiornamento dello stato della sessione:', err);
+                }
+            });
+        }
+        
         if (userRole === 'user1') {
             user1Assigned = false;
             user1ButtonState = false;
@@ -154,6 +221,11 @@ io.on('connection', (socket) => {
             currentUser2Text = '';
         }
         connectedUsers.delete(socket.id);
+        
+        // Se non ci sono più utenti connessi, resettiamo la sessione
+        if (connectedUsers.size === 0) {
+            currentSessionId = null;
+        }
         
         // Notifichiamo tutti i client delle nuove assegnazioni e stati
         io.emit('roleAssignment', {
@@ -172,29 +244,41 @@ io.on('connection', (socket) => {
     function checkResult() {
         if (user1ButtonState && user2ButtonState) {
             io.emit('canShowResult', true);
-            
-            // Salviamo lo stato nel database MySQL
-            const query = `
-                INSERT INTO game_states 
-                (user_text, user1_button_state, user2_button_state, result_button_state) 
-                VALUES (?, ?, ?, ?)
-            `;
-            
-            // Salviamo il testo di entrambi gli utenti
-            const combinedText = `Utente 1: ${currentUser1Text}\nUtente 2: ${currentUser2Text}`;
-            
-            pool.query(query, [combinedText, user1ButtonState, user2ButtonState, true], (err, results) => {
-                if (err) {
-                    console.error('Errore nel salvataggio dello stato:', err);
-                } else {
-                    console.log('Stato del gioco salvato nel database');
-                }
-            });
         } else {
             io.emit('canShowResult', false);
         }
     }
 });
+
+// Aggiungiamo una funzione per stampare la cronologia nella console del server
+function printSessionHistory() {
+    pool.query(`
+        SELECT * FROM game_states 
+        ORDER BY timestamp DESC 
+        LIMIT 10
+    `, (err, results) => {
+        if (err) {
+            console.error('Errore nel recupero della cronologia:', err);
+        } else {
+            console.log('\n=== Cronologia delle ultime 10 sessioni ===');
+            results.forEach(session => {
+                console.log(`\nSessione ID: ${session.session_id}`);
+                console.log(`Testo: ${session.user_text}`);
+                console.log(`Stato Utente 1: ${session.user1_button_state ? 'ON' : 'OFF'}`);
+                console.log(`Stato Utente 2: ${session.user2_button_state ? 'ON' : 'OFF'}`);
+                console.log(`Attiva: ${session.is_active ? 'Sì' : 'No'}`);
+                console.log(`Timestamp: ${session.timestamp}`);
+                console.log('----------------------------------------');
+            });
+        }
+    });
+}
+
+// Stampiamo la cronologia ogni 30 secondi
+setInterval(printSessionHistory, 30000);
+
+// Stampiamo la cronologia all'avvio del server
+printSessionHistory();
 
 server.listen(PORT, () => {
     console.log(`Server in ascolto sulla porta ${PORT}`);
