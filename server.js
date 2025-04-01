@@ -1,5 +1,4 @@
 // server.js - Versione con pulsanti toggle ON/OFF e database MySQL
-require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -18,10 +17,10 @@ const PORT = process.env.PORT || 3000;
 
 // Configurazione della connessione MySQL
 const pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
+    host: 'localhost',
+    user: 'root',
+    password: '',
+    database: 'door_game',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -43,36 +42,8 @@ pool.query(`
 `, (err) => {
     if (err) {
         console.error('Errore nella creazione della tabella:', err);
-        // Proviamo a creare la tabella senza l'indice UNIQUE
-        pool.query(`
-            CREATE TABLE IF NOT EXISTS game_states (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                session_id VARCHAR(255),
-                user_text TEXT,
-                user1_button_state BOOLEAN,
-                user2_button_state BOOLEAN,
-                result_button_state BOOLEAN,
-                is_active BOOLEAN DEFAULT TRUE,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `, (err2) => {
-            if (err2) {
-                console.error('Errore nella creazione della tabella senza indice:', err2);
-            } else {
-                console.log('Tabella game_states creata senza indice UNIQUE');
-            }
-        });
     } else {
         console.log('Tabella game_states pronta');
-    }
-});
-
-// Test della connessione al database
-pool.query('SELECT 1', (err) => {
-    if (err) {
-        console.error('Errore nella connessione al database:', err);
-    } else {
-        console.log('Connessione al database stabilita con successo');
     }
 });
 
